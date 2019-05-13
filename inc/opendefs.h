@@ -364,10 +364,11 @@ typedef struct {
    int8_t        l1_rssi;                                       // RSSI of received packet
    uint8_t       l1_lqi;                                        // LQI of received packet
    bool          l1_crc;                                        // did received packet pass CRC check?
+   // Whisper variables
+   bool          isDioFake;                                     // indicate if the packet is a fake whisper dio
+   bool          is6pFake;                                      // indicate that the packet is whisper 6p request
    //the packet
    uint8_t       packet[1+1+125+2+1];                           // 1B spi address, 1B length, 125B data, 2B CRC, 1B LQI
-   // Whisper
-   bool          isDioFake;
 } OpenQueueEntry_t;
 
 

@@ -90,6 +90,8 @@ OpenQueueEntry_t* openqueue_getFreePacketBuffer(uint8_t creator) {
       if (openqueue_vars.queue[i].owner==COMPONENT_NULL) {
          openqueue_vars.queue[i].creator=creator;
          openqueue_vars.queue[i].owner=COMPONENT_OPENQUEUE;
+         // Reset whisper variables
+         openqueue_vars.queue[i].isDioFake = FALSE;
          ENABLE_INTERRUPTS();
          return &openqueue_vars.queue[i];
       }
@@ -384,8 +386,8 @@ OpenQueueEntry_t*  openqueue_macGetDIOPacket(){
     for (i=0;i<QUEUELENGTH;i++) {
         if (openqueue_vars.queue[i].owner==COMPONENT_SIXTOP_TO_IEEE802154E &&
             openqueue_vars.queue[i].creator==COMPONENT_ICMPv6RPL           &&
-            (packetfunctions_isBroadcastMulticast(&(openqueue_vars.queue[i].l2_nextORpreviousHop)) || openqueue_vars.queue[i].isDioFake))
-        {
+            (packetfunctions_isBroadcastMulticast(&(openqueue_vars.queue[i].l2_nextORpreviousHop))
+             || openqueue_vars.queue[i].isDioFake)) {
             ENABLE_INTERRUPTS();
             return &openqueue_vars.queue[i];
         }

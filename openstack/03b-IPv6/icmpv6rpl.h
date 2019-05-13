@@ -205,6 +205,8 @@ typedef struct {
    icmpv6rpl_pio_t*          incomingPio;             //pio structure incoming
    icmpv6rpl_config_ht*      incomingConf;            //configuration incoming
    bool                      daoSent;
+   // Whisper
+   bool                      sendNormalDios;
 } icmpv6rpl_vars_t;
 
 
@@ -229,7 +231,11 @@ void     icmpv6rpl_killPreferredParent(void);
 void     icmpv6rpl_updateMyDAGrankAndParentSelection(void);
 void     icmpv6rpl_indicateRxDIO(OpenQueueEntry_t* msg);
 bool     icmpv6rpl_daoSent(void);
-uint8_t  send_WhisperDIO(dagrank_t target_rank);
+
+// Whisper
+uint8_t  send_WhisperDIO();
+void     stopSendDios();
+
 
 /**
 \}

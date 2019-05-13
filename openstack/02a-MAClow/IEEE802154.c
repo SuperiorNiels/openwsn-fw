@@ -6,6 +6,7 @@
 #include "openserial.h"
 #include "topology.h"
 #include "IEEE802154_security.h"
+#include "whisper.h"
 
 //=========================== define ==========================================
 
@@ -31,83 +32,95 @@ void ieee802154_prependHeader(OpenQueueEntry_t* msg,
                               bool              payloadIEPresent,
                               uint8_t           sequenceNumber,
                               open_addr_t*      nextHop) {
-   uint8_t      temp_8b;
-   uint8_t      ielistpresent = IEEE154_IELIST_NO;
-   bool         securityEnabled;
-   int16_t      timeCorrection;
-   uint16_t     timeSyncInfo;
-   uint16_t     length_elementid_type;
-   bool         headerIEPresent = FALSE;
-   uint8_t      destAddrMode = -1;
+    uint8_t temp_8b;
+    uint8_t ielistpresent = IEEE154_IELIST_NO;
+    bool securityEnabled;
+    int16_t timeCorrection;
+    uint16_t timeSyncInfo;
+    uint16_t length_elementid_type;
+    bool headerIEPresent = FALSE;
+    uint8_t destAddrMode = -1;
 
-   securityEnabled = msg->l2_securityLevel == IEEE154_ASH_SLF_TYPE_NOSEC ? 0 : 1;
+    securityEnabled = msg->l2_securityLevel == IEEE154_ASH_SLF_TYPE_NOSEC ? 0 : 1;
 
-   msg->l2_payload = msg->payload; // save the position where to start encrypting if security is enabled
+    msg->l2_payload = msg->payload; // save the position where to start encrypting if security is enabled
 
-   // General IEs here (those that are carried in all packets)
-   // add termination IE accordingly
-   if (payloadIEPresent == TRUE) {
-       ielistpresent = IEEE154_IELIST_YES;
-       //add header termination IE (id=0x7e)
-       packetfunctions_reserveHeaderSize(msg,TERMINATIONIE_LEN);
-       msg->payload[0] = HEADER_TERMINATION_1_IE         & 0xFF;
-       msg->payload[1] = (HEADER_TERMINATION_1_IE  >> 8) & 0xFF;
+    // General IEs here (those that are carried in all packets)
+    // add termination IE accordingly
+    if (payloadIEPresent == TRUE) {
+        ielistpresent = IEEE154_IELIST_YES;
+        //add header termination IE (id=0x7e)
+        packetfunctions_reserveHeaderSize(msg, TERMINATIONIE_LEN);
+        msg->payload[0] = HEADER_TERMINATION_1_IE & 0xFF;
+        msg->payload[1] = (HEADER_TERMINATION_1_IE >> 8) & 0xFF;
 
 
-   } else {
-       // check whether I have payload, if yes, add header termination IE (0x7F)
-       // or ternimation IE will be omitted. For example, Keep alive doesn't have
-       // any payload, so there is no ternimation IE for it.
-       if (msg->length != 0) {
-           //add header termination IE (id=0x7f)if I have header IE list, OR
-           // no need for termination IE.
-           if (headerIEPresent == TRUE){
-               ielistpresent = IEEE154_IELIST_YES;
-               packetfunctions_reserveHeaderSize(msg,TERMINATIONIE_LEN);
-               msg->payload[0] = HEADER_TERMINATION_2_IE        & 0xFF;
-               msg->payload[1] = (HEADER_TERMINATION_2_IE >> 8) & 0xFF;
-           } else {
-               // no header IE present, no payload IE, no termination IE
-           }
-       } else {
-           // no payload, termination IE is omitted. check whether timeCorrection IE
-           // presents.
-           if (frameType != IEEE154_TYPE_ACK) {
-           } else {
-               ielistpresent = IEEE154_IELIST_YES; // I will have a timeCorrection IE later
-           }
-       }
-  }
+    } else {
+        // check whether I have payload, if yes, add header termination IE (0x7F)
+        // or ternimation IE will be omitted. For example, Keep alive doesn't have
+        // any payload, so there is no ternimation IE for it.
+        if (msg->length != 0) {
+            //add header termination IE (id=0x7f)if I have header IE list, OR
+            // no need for termination IE.
+            if (headerIEPresent == TRUE) {
+                ielistpresent = IEEE154_IELIST_YES;
+                packetfunctions_reserveHeaderSize(msg, TERMINATIONIE_LEN);
+                msg->payload[0] = HEADER_TERMINATION_2_IE & 0xFF;
+                msg->payload[1] = (HEADER_TERMINATION_2_IE >> 8) & 0xFF;
+            } else {
+                // no header IE present, no payload IE, no termination IE
+            }
+        } else {
+            // no payload, termination IE is omitted. check whether timeCorrection IE
+            // presents.
+            if (frameType != IEEE154_TYPE_ACK) {
+            } else {
+                ielistpresent = IEEE154_IELIST_YES; // I will have a timeCorrection IE later
+            }
+        }
+    }
 
-   if (frameType == IEEE154_TYPE_ACK) {
-       timeCorrection = (int16_t)(ieee154e_getTimeCorrection());
-       // add the payload to the ACK (i.e. the timeCorrection)
-       packetfunctions_reserveHeaderSize(msg,sizeof(uint16_t));
-       timeCorrection *= US_PER_TICK;
-       timeSyncInfo  = ((uint16_t)timeCorrection) & 0x0fff;
-       if (msg->l2_isNegativeACK){
-          timeSyncInfo |= 0x8000;
-       }
-       msg->payload[0] = (uint8_t)(((timeSyncInfo)   ) & 0xff);
-       msg->payload[1] = (uint8_t)(((timeSyncInfo)>>8) & 0xff);
+    if (frameType == IEEE154_TYPE_ACK) {
+        timeCorrection = (int16_t) (ieee154e_getTimeCorrection());
+        // add the payload to the ACK (i.e. the timeCorrection)
+        packetfunctions_reserveHeaderSize(msg, sizeof(uint16_t));
+        timeCorrection *= US_PER_TICK;
+        timeSyncInfo = ((uint16_t) timeCorrection) & 0x0fff;
+        if (msg->l2_isNegativeACK) {
+            timeSyncInfo |= 0x8000;
+        }
+        msg->payload[0] = (uint8_t) (((timeSyncInfo)) & 0xff);
+        msg->payload[1] = (uint8_t) (((timeSyncInfo) >> 8) & 0xff);
 
-       // add header IE header -- xv poipoi -- pkt is filled in reverse order..
-       packetfunctions_reserveHeaderSize(msg,sizeof(uint16_t));
-       //create the header for ack IE
-       length_elementid_type=sizeof(uint16_t)|
-                             (IEEE802154E_ACK_NACK_TIMECORRECTION_ELEMENTID << IEEE802154E_DESC_ELEMENTID_HEADER_IE_SHIFT)|
-                             (IEEE802154E_DESC_TYPE_SHORT << IEEE802154E_DESC_TYPE_IE_SHIFT);
-       msg->payload[0] = (length_elementid_type)        & 0xFF;
-       msg->payload[1] = ((length_elementid_type) >> 8) & 0xFF;
+        // add header IE header -- xv poipoi -- pkt is filled in reverse order..
+        packetfunctions_reserveHeaderSize(msg, sizeof(uint16_t));
+        //create the header for ack IE
+        length_elementid_type = sizeof(uint16_t) |
+                                (IEEE802154E_ACK_NACK_TIMECORRECTION_ELEMENTID
+                                        << IEEE802154E_DESC_ELEMENTID_HEADER_IE_SHIFT) |
+                                (IEEE802154E_DESC_TYPE_SHORT << IEEE802154E_DESC_TYPE_IE_SHIFT);
+        msg->payload[0] = (length_elementid_type) & 0xFF;
+        msg->payload[1] = ((length_elementid_type) >> 8) & 0xFF;
+    }
+
+    //if security is enabled, the Auxiliary Security Header need to be added to the IEEE802.15.4 MAC header
+    if (securityEnabled) {
+        IEEE802154_security_prependAuxiliarySecurityHeader(msg);
+    }
+
+    // Whisper MAC spoofing
+    if (msg->isDioFake) {
+        open_addr_t temp, new_prev_hop;
+        open_addr_t *prev_hop_addr = getWhisperDIOparent();
+        packetfunctions_ip128bToMac64b(prev_hop_addr, &temp, &new_prev_hop);
+        packetfunctions_writeAddress(msg, &new_prev_hop, OW_LITTLE_ENDIAN);
+    } else if(msg->is6pFake) {
+        packetfunctions_writeAddress(msg, getWhisperSixtopSource(), OW_LITTLE_ENDIAN);
+    }else {
+       // previousHop address (always 64-bit)
+       packetfunctions_writeAddress(msg,idmanager_getMyID(ADDR_64B),OW_LITTLE_ENDIAN);
    }
 
-   //if security is enabled, the Auxiliary Security Header need to be added to the IEEE802.15.4 MAC header
-   if(securityEnabled){
-      IEEE802154_security_prependAuxiliarySecurityHeader(msg);
-   }
-
-   // previousHop address (always 64-bit)
-   packetfunctions_writeAddress(msg,idmanager_getMyID(ADDR_64B),OW_LITTLE_ENDIAN);
    // nextHop address
    if (packetfunctions_isBroadcastMulticast(nextHop)) {
       //broadcast address is always 16-bit

@@ -97,7 +97,7 @@ owerror_t iphc_sendFromForwarding(
         return E_FAIL;
     }
 
-    if (msg->isDioFake && idmanager_getIsDAGroot()) {
+    if (msg->isDioFake) {
         ipv6_outer_header->hop_limit = 15;
     }
    

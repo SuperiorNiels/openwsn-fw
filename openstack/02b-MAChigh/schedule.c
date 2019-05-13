@@ -692,6 +692,9 @@ bool schedule_hasManagedTxCellToNeighbor(open_addr_t* neighbor){
 bool schedule_hasNonParentAutonomousTxRxCellUnicast(open_addr_t* parentNeighbor, open_addr_t* nonParentNeighbor){
     uint8_t i;
 
+    // whisper do not remove autonomous cells
+    return FALSE;
+
     INTERRUPT_DECLARATION();
     DISABLE_INTERRUPTS();
 

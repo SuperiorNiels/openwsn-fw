@@ -16,6 +16,7 @@
 #include "idmanager.h"
 #include "schedule.h"
 #include "msf.h"
+#include "whisper.h"
 
 //=========================== define ==========================================
 
@@ -212,8 +213,10 @@ owerror_t sixtop_request(
     pkt->creator = COMPONENT_SIXTOP_RES;
     pkt->owner   = COMPONENT_SIXTOP_RES;
 
+    pkt->is6pFake = FALSE;
+
     memcpy(&(pkt->l2_nextORpreviousHop),neighbor,sizeof(open_addr_t));
-    if (celllist_toBeDeleted != NULL){
+    if (celllist_toBeDeleted != NULL) {
         memcpy(sixtop_vars.celllist_toDelete,celllist_toBeDeleted,CELLLIST_MAX_LEN*sizeof(cellInfo_ht));
     }
     sixtop_vars.cellOptions = cellOptions;
@@ -1101,8 +1104,15 @@ port_INLINE bool sixtop_processIEs(OpenQueueEntry_t* pkt, uint16_t * lenIE) {
     ptr       += 1;
     headerlen += 1;
 
-    // give six2six to process
-    sixtop_six2six_notifyReceive(version,type,code,sfid,seqNum,ptr,len-headerlen,pkt);
+
+    if(pkt->is6pFake == TRUE) {
+        // notify whisper that a response has been received
+        whisperSixtopResonseReceive(&pkt->l2_nextORpreviousHop, code);
+    } else {
+        // give six2six to process
+        sixtop_six2six_notifyReceive(version,type,code,sfid,seqNum,ptr,len-headerlen,pkt);
+    }
+
     *lenIE     = len+2;
     return TRUE;
 }
@@ -1163,6 +1173,8 @@ void sixtop_six2six_notifyReceive(
                &(pkt->l2_nextORpreviousHop),
                sizeof(open_addr_t)
         );
+
+
 
         // the follow while loop only execute once
         do{
@@ -1311,7 +1323,7 @@ void sixtop_six2six_notifyReceive(
             pktLen  -= 1;
 
             // add command
-            if (code == IANA_6TOP_CMD_ADD){
+            if (code == IANA_6TOP_CMD_ADD) {
                 if (schedule_getNumberOfFreeEntries() < numCells){
                     returnCode = IANA_6TOP_RC_BUSY;
                     break;
@@ -1496,6 +1508,9 @@ void sixtop_six2six_notifyReceive(
 
     if (type == SIXTOP_CELL_RESPONSE) {
         // this is a 6p response message
+
+        // Whisper, if the address matches with the target clear the autonoumous cell
+        //whisperCheckSixtopResponseAddr(&pkt->l2_nextORpreviousHop);
 
         // if the code is SUCCESS
         if (code == IANA_6TOP_RC_SUCCESS || code == IANA_6TOP_RC_EOL){
@@ -1807,4 +1822,149 @@ bool sixtop_areAvailableCellsToBeRemoved(
         }
    }
    return available;
+}
+
+// Whisper
+owerror_t sixtop_request_Whisper(
+        uint8_t      code,
+        open_addr_t* neighbor,
+        uint8_t      cellOptions,
+        cellInfo_ht* cell, // Whisper only supportes one cell at a time (atm)
+        uint8_t      sfid,
+        uint16_t     listingOffset,
+        uint16_t     listingMaxNumCells,
+        uint8_t      seqNum
+) {
+    OpenQueueEntry_t *pkt;
+    uint8_t len;
+    uint16_t length_groupid_type;
+    owerror_t outcome;
+
+    // filter parameters: handler, status and neighbor
+    if (neighbor == NULL) {
+        whisper_log("Neighbour should be defined");
+        return E_FAIL;
+    }
+
+    // get a free packet buffer
+    pkt = openqueue_getFreePacketBuffer(COMPONENT_SIXTOP_RES);
+    if (pkt == NULL) {
+        openserial_printError(
+                COMPONENT_SIXTOP_RES,
+                ERR_NO_FREE_PACKET_BUFFER,
+                (errorparameter_t) 0,
+                (errorparameter_t) 0
+        );
+        return E_FAIL;
+    }
+
+    // take ownership
+    pkt->creator = COMPONENT_SIXTOP_RES;
+    pkt->owner = COMPONENT_SIXTOP_RES;
+
+    pkt->is6pFake = TRUE;
+
+    // Set target of the packet
+    memcpy(&(pkt->l2_nextORpreviousHop), neighbor, sizeof(open_addr_t));
+
+    sixtop_vars.cellOptions = cellOptions;
+
+    if(code == IANA_6TOP_CMD_RELOCATE) {
+        whisper_log("6P relocate is not supported by whisper.\n");
+        return E_FAIL;
+    }
+
+    len = 0;
+    if (code == IANA_6TOP_CMD_ADD || code == IANA_6TOP_CMD_DELETE) {
+        // append 6p celllists
+        if (cell->isUsed) {
+            packetfunctions_reserveHeaderSize(pkt, 4);
+            pkt->payload[0] = (uint8_t) (cell->slotoffset & 0x00FF);
+            pkt->payload[1] = (uint8_t) ((cell->slotoffset & 0xFF00) >> 8u);
+            pkt->payload[2] = (uint8_t) (cell->channeloffset & 0x00FF);
+            pkt->payload[3] = (uint8_t) ((cell->channeloffset & 0xFF00) >> 8u);
+            len += 4;
+        }
+        // append 6p numberCells
+        packetfunctions_reserveHeaderSize(pkt, sizeof(uint8_t));
+        *((uint8_t *) (pkt->payload)) = 1;
+        len += 1;
+    }
+
+    if (code == IANA_6TOP_CMD_LIST) {
+        // append 6p max number of cells
+        packetfunctions_reserveHeaderSize(pkt, sizeof(uint16_t));
+        *((uint8_t *) (pkt->payload)) = (uint8_t) (listingMaxNumCells & 0x00FF);
+        *((uint8_t *) (pkt->payload + 1)) = (uint8_t) (listingMaxNumCells & 0xFF00) >> 8;
+        len += 2;
+        // append 6p listing offset
+        packetfunctions_reserveHeaderSize(pkt, sizeof(uint16_t));
+        *((uint8_t *) (pkt->payload)) = (uint8_t) (listingOffset & 0x00FF);
+        *((uint8_t *) (pkt->payload + 1)) = (uint8_t) (listingOffset & 0xFF00) >> 8;
+        len += 2;
+        // append 6p Reserved field
+        packetfunctions_reserveHeaderSize(pkt, sizeof(uint8_t));
+        *((uint8_t *) (pkt->payload)) = 0;
+        len += 1;
+    }
+
+    if (code != IANA_6TOP_CMD_CLEAR) {
+        // append 6p celloptions
+        packetfunctions_reserveHeaderSize(pkt, sizeof(uint8_t));
+        *((uint8_t *) (pkt->payload)) = cellOptions;
+        len += 1;
+    }
+
+    // append 6p metadata
+    packetfunctions_reserveHeaderSize(pkt, sizeof(uint16_t));
+    pkt->payload[0] = (uint8_t) (sixtop_vars.cb_sf_getMetadata() & 0x00FF);
+    pkt->payload[1] = (uint8_t) ((sixtop_vars.cb_sf_getMetadata() & 0xFF00) >> 8);
+    len += 2;
+
+    // append 6p Seqnum and schedule Generation
+    packetfunctions_reserveHeaderSize(pkt, sizeof(uint8_t));
+    *((uint8_t *) (pkt->payload)) = seqNum;
+    len += 1;
+
+    // append 6p sfid
+    packetfunctions_reserveHeaderSize(pkt, sizeof(uint8_t));
+    *((uint8_t *) (pkt->payload)) = sfid;
+    len += 1;
+
+    // append 6p code
+    packetfunctions_reserveHeaderSize(pkt, sizeof(uint8_t));
+    *((uint8_t *) (pkt->payload)) = code;
+    // record the code to determine the action after 6p senddone
+    pkt->l2_sixtop_command = code;
+    len += 1;
+
+    // append 6p version, T(type) and  R(reserved)
+    packetfunctions_reserveHeaderSize(pkt, sizeof(uint8_t));
+    *((uint8_t *) (pkt->payload)) = IANA_6TOP_6P_VERSION | IANA_6TOP_TYPE_REQUEST;
+    len += 1;
+
+    // append 6p subtype id
+    packetfunctions_reserveHeaderSize(pkt, sizeof(uint8_t));
+    *((uint8_t *) (pkt->payload)) = IANA_6TOP_SUBIE_ID;
+    len += 1;
+
+    // append IETF IE header (length_groupid_type)
+    packetfunctions_reserveHeaderSize(pkt, sizeof(uint16_t));
+    length_groupid_type = len;
+    length_groupid_type |= (IANA_IETF_IE_GROUP_ID | IANA_IETF_IE_TYPE);
+    pkt->payload[0] = length_groupid_type & 0xFF;
+    pkt->payload[1] = (length_groupid_type >> 8) & 0xFF;
+
+    // indicate IEs present
+    pkt->l2_payloadIEpresent = TRUE;
+    // record this packet as sixtop request message
+    pkt->l2_sixtop_messageType = SIXTOP_CELL_REQUEST;
+
+    // send packet
+    outcome = sixtop_send(pkt);
+
+    if (outcome != E_SUCCESS) {
+        openqueue_freePacketBuffer(pkt);
+    }
+    return outcome;
 }

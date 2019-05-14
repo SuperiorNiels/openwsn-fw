@@ -48,10 +48,9 @@ void whisper_timer_cb(opentimers_id_t id);
 \brief Initialize this module.
 */
 void whisper_init() {
-	whisper_log("Initializing whisper node.\n");
+	whisper_log("Initializing whisper root.\n");
 
 	whisper_vars.state = WHISPER_STATE_IDLE;
-    stopSendDios(); // Turn of sending normal dios
 
     // my_addr = is to store the eui, so we can easily construct addresses by just setting the correct id
     whisper_vars.my_addr.type = ADDR_128B;
@@ -76,7 +75,7 @@ void whisper_init() {
 	opencoap_register(&whisper_vars.desc);
 
 	// Start timer for data collection (on root)
-    whisper_vars.timerPeriod = 5000; // 5 seconds
+    whisper_vars.timerPeriod = 1000; // FIXME: maybe 5 seconds?
     whisper_vars.periodicTimer = opentimers_create(TIMER_GENERAL_PURPOSE, TASKPRIO_RPL);
     whisper_vars.oneshotTimer = opentimers_create(TIMER_GENERAL_PURPOSE, TASKPRIO_RPL);
     opentimers_scheduleIn(
@@ -97,53 +96,6 @@ uint8_t whisper_getState() {
 }
 
 void whisper_sendDone(OpenQueueEntry_t* msg, owerror_t error) {
-    if(error == E_SUCCESS) {
-        if (whisper_vars.state == WHISPER_STATE_WAIT_COAP) {
-            // Coap PUT received and coap message is correctly handled
-            switch (whisper_vars.payloadBuffer[1]) {
-                case 0x01:
-                    whisper_log("Whisper fake dio command (remote)\n");
-                    whisperDioCommand(whisper_vars.payloadBuffer);
-                    break;
-                case 0x02:
-                    whisper_log("Whisper 6P command (remote).\n");
-                    if (whisperSixtopParse(whisper_vars.payloadBuffer)) whisperExecuteSixtop();
-                    else whisper_log("Parsing command failed.\n");
-                    break;
-                case 0x03:
-                    whisper_log("Whisper 6P stored link information: \n");
-                    // Cancel the timer
-                    opentimers_cancel(whisper_vars.oneshotTimer);
-                    whisper_vars.state = WHISPER_STATE_IDLE;
-                    for (uint8_t i = 0; i < SIXTOP_MAX_LINK_SNIFFING; i++) {
-                        if (whisper_vars.neighbors.sixtop[i].active == TRUE) {
-                            whisper_log("Link %d -> %d, seqNum: %d\n",
-                                        whisper_vars.neighbors.sixtop[i].srcId[1],
-                                        whisper_vars.neighbors.sixtop[i].destId[1],
-                                        whisper_vars.neighbors.sixtop[i].seqNum);
-                        }
-                    }
-                    break;
-                case 0x04:
-                    whisper_log("Whisper get neighbours command.\n");
-                    // Cancel timer
-                    opentimers_cancel(whisper_vars.oneshotTimer);
-                    whisper_vars.state = WHISPER_STATE_IDLE;
-                    uint8_t payload[60]; // 2 bytes per possible neigbour
-                    payload[0] = 0x04; // indicate response to get neighbours command
-                    payload[1] = idmanager_getMyID(ADDR_64B)->addr_64b[6];
-                    payload[2] = idmanager_getMyID(ADDR_64B)->addr_64b[7];
-                    uint8_t length = getNeighborsList(&payload[3]);
-                    sendCoapResponseToController(payload, length + 3);
-                    break;
-                default:
-                    break;
-            }
-        } else if (whisper_vars.state == WHISPER_STATE_SEND_RESULT) {
-            whisper_vars.state = WHISPER_STATE_IDLE;
-        }
-    }
-
     openqueue_freePacketBuffer(msg);
 }
 
@@ -157,18 +109,8 @@ void whisperClearStateCb(opentimers_id_t id) {
             whisper_vars.whisper_sixtop.waiting_for_response = FALSE;
             break;
         case WHISPER_STATE_DIO:
-            whisper_log("Clearing whisper dio settings\n");
-            if(whisper_vars.whisper_ack.acceptACKs == FALSE) {
-                // if false, the ACK is received, and the dio message is received correctly
-                uint8_t result[3] = {0x01, 0x00};
-                sendCoapResponseToController(result, 3);
-            } else {
-                uint8_t result[3] = {0x01, 0x01};
-                sendCoapResponseToController(result, 3);
-            }
             break;
         case WHISPER_STATE_WAIT_COAP:
-            whisper_log("Waiting for CoAP, command aborted.\n");
             break;
         default:
             whisper_log("Unkown state.\n");
@@ -187,7 +129,68 @@ void whisper_timer_cb(opentimers_id_t id) {
 }
 
 void whisper_task_remote(uint8_t* buf, uint8_t bufLen) {
-    // Serial communication (Rx) can be used to provide out band communication between node and controller
+    whisper_log("Received Serial.\n");
+
+    if(whisper_vars.state != WHISPER_STATE_IDLE) {
+        whisper_log("Not in idle state, abort.\n");
+        return;
+    }
+
+    // Start timer to clean up (in any event)
+    opentimers_scheduleIn(
+            whisper_vars.oneshotTimer,
+            (uint32_t) 10000, // wait 10 seconds
+            TIME_MS,
+            TIMER_ONESHOT,
+            whisperClearStateCb
+    );
+
+    if(bufLen > 30) {
+        whisper_log("Payload too large (>30bytes).\n");
+        return;
+    }
+
+    memcpy(whisper_vars.payloadBuffer, buf, bufLen + 1); // TODO: not actually necessary to copy the buffer
+
+    switch (whisper_vars.payloadBuffer[1]) {
+        case WHISPER_COMMAND_DIO:
+            whisper_log("Whisper fake dio command (root)\n");
+            whisperDioCommand(whisper_vars.payloadBuffer);
+            break;
+        case WHISPER_COMMAND_SIXTOP:
+            whisper_log("Whisper 6P command (root).\n");
+            if (whisperSixtopParse(whisper_vars.payloadBuffer)) whisperExecuteSixtop();
+            else whisper_log("Parsing command failed.\n");
+            break;
+        case WHISPER_COMMAND_LINK_INFO:
+            whisper_log("Whisper 6P stored link information: \n");
+            // Cancel the timer
+            opentimers_cancel(whisper_vars.oneshotTimer);
+            whisper_vars.state = WHISPER_STATE_IDLE;
+            for (uint8_t i = 0; i < SIXTOP_MAX_LINK_SNIFFING; i++) {
+                if (whisper_vars.neighbors.sixtop[i].active == TRUE) {
+                    whisper_log("Link %d -> %d, seqNum: %d\n",
+                                whisper_vars.neighbors.sixtop[i].srcId[1],
+                                whisper_vars.neighbors.sixtop[i].destId[1],
+                                whisper_vars.neighbors.sixtop[i].seqNum);
+                }
+            }
+            break;
+        case WHISPER_COMMAND_NEIGHBOURS:
+            whisper_log("Whisper get neighbours command.\n");
+            // Cancel timer
+            opentimers_cancel(whisper_vars.oneshotTimer);
+            whisper_vars.state = WHISPER_STATE_IDLE;
+            uint8_t payload[60]; // 2 bytes per possible neigbour
+            payload[0] = 0x04; // indicate response to get neighbours command
+            payload[1] = idmanager_getMyID(ADDR_64B)->addr_64b[6];
+            payload[2] = idmanager_getMyID(ADDR_64B)->addr_64b[7];
+            uint8_t length = getNeighborsList(&payload[3]);
+            sendCoapResponseToController(payload, length + 3);
+            break;
+        default:
+            break;
+    }
 }
 
 owerror_t whisper_receive(OpenQueueEntry_t* msg,
@@ -196,49 +199,8 @@ owerror_t whisper_receive(OpenQueueEntry_t* msg,
 						coap_option_iht*  coap_outgoingOptions,
 						uint8_t*          coap_outgoingOptionsLen)
 {
-	owerror_t outcome;
-
-    // Dont's do anything new when not, idle
-    if(whisper_vars.state != WHISPER_STATE_IDLE) {
-        // reset packet payload
-        msg->payload                     = &(msg->packet[127]);
-        msg->length                      = 0;
-        coap_header->Code                = COAP_CODE_RESP_CHANGED;
-        return E_FAIL;
-    }
-
-	switch (coap_header->Code) {
-        case COAP_CODE_REQ_PUT:
-            whisper_log("Received CoAP PUT.\n");
-
-            if(msg->length <= 30) {
-                memcpy(whisper_vars.payloadBuffer, msg->payload, msg->length);
-                whisper_vars.state = WHISPER_STATE_WAIT_COAP;
-                // Start timer to clean up (in any event)
-                opentimers_scheduleIn(
-                        whisper_vars.oneshotTimer,
-                        (uint32_t) 10000, // wait 10 seconds
-                        TIME_MS,
-                        TIMER_ONESHOT,
-                        whisperClearStateCb
-                );
-            } else {
-                whisper_log("Message payload to long.\n");
-            }
-
-            // reset packet payload
-            msg->payload                     = &(msg->packet[127]);
-            msg->length                      = 0;
-            coap_header->Code                = COAP_CODE_RESP_CHANGED;
-            outcome                          = E_SUCCESS;
-
-            break;
-		default:
-			outcome = E_FAIL;
-			break;
-	}
-
-	return outcome;
+    // CoAP can also be used for communication between root and controller
+    return E_FAIL;
 }
 
 // ---------------------- Whisper DIO --------------------------
@@ -289,26 +251,35 @@ void whisperDioCommand(const uint8_t* command) {
     whisper_vars.my_addr.addr_128b[15] = command[5];
     memcpy(&whisper_vars.whisper_dio.parent, &whisper_vars.my_addr, sizeof(open_addr_t));
 
-    // Next Hop == target
-    memcpy(&whisper_vars.whisper_dio.nextHop, &whisper_vars.whisper_dio.target, sizeof(open_addr_t));
+    // Next Hop
+    whisper_vars.my_addr.addr_128b[14] = command[6];
+    whisper_vars.my_addr.addr_128b[15] = command[7];
+    memcpy(&whisper_vars.whisper_dio.nextHop, &whisper_vars.my_addr, sizeof(open_addr_t));
 
-    whisper_vars.whisper_dio.rank = (uint16_t) (command[8] << 8) | (uint16_t ) command[9];
+    whisper_vars.whisper_dio.rank = (uint16_t) (command[8] << 8) | (uint16_t) command[9];
 
     whisper_log("Sending fake DIO with rank %d.\n", whisper_vars.whisper_dio.rank);
 
+    if(packetfunctions_sameAddress(&whisper_vars.whisper_dio.target, &whisper_vars.whisper_dio.nextHop)) {
+        whisper_log("Target and nexthop are the same, changing mac address.\n");
+        whisper_vars.whisper_dio.changeL2src = TRUE;
+    } else whisper_vars.whisper_dio.changeL2src = FALSE;
+
     uint8_t result = send_WhisperDIO();
 
-    // If DIO is send successfully (to lower layers) activate ACK sniffing if the parent is not myself
-    if(result == E_SUCCESS && (idmanager_isMyAddress(&whisper_vars.whisper_dio.parent) == FALSE)) {
+    // If DIO is send successfully (to lower layers) activate ACK sniffing for packet between parent and nexthop
+    if(result == E_SUCCESS && whisper_vars.whisper_dio.changeL2src) {
         // Set ACK addresses
         whisper_vars.whisper_ack.ACKsrc.type = ADDR_64B;
-        packetfunctions_ip128bToMac64b(&whisper_vars.whisper_dio.target,&temp,&whisper_vars.whisper_ack.ACKsrc);
+        packetfunctions_ip128bToMac64b(&whisper_vars.whisper_dio.nextHop,&temp,&whisper_vars.whisper_ack.ACKsrc);
         whisper_vars.whisper_ack.ACKdest.type = ADDR_64B;
         packetfunctions_ip128bToMac64b(&whisper_vars.whisper_dio.parent,&temp,&whisper_vars.whisper_ack.ACKdest);
         whisper_vars.whisper_ack.acceptACKs = TRUE;
     }
+}
 
-    // Notify controller when ACK is received
+bool whisperDIOGetChangeL2src() {
+    return whisper_vars.whisper_dio.changeL2src;
 }
 
 // ---------------------- Whisper Sixtop --------------------------
@@ -747,7 +718,7 @@ void whisper_log(char* msg, ...) {
             break;
 	}
 
-	printf("[%s] [%d] whisper_node - ", state, my_id->addr_64b[1]);
+	printf("[%s] [%d] whisper_root - ", state, my_id->addr_64b[1]);
 
 	char buf[100];
 	va_list v1;

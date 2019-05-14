@@ -762,6 +762,7 @@ void registerNewNeighbor(open_addr_t* address,
             return;
         }
     }
+    neighbors_updateAutonomousCells();
 }
 
 bool isNeighbor(open_addr_t* neighbor) {

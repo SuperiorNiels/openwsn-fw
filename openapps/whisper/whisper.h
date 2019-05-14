@@ -13,7 +13,7 @@
 
 //=========================== define ==========================================
 
-#define SIXTOP_MAX_LINK_SNIFFING 30 // number of links to keep track of
+#define SIXTOP_MAX_LINK_SNIFFING 60 // number of links to keep track of
 
 #define WHISPER_STATE_IDLE          0x00
 #define WHISPER_STATE_SIXTOP        0x01
@@ -21,9 +21,21 @@
 #define WHISPER_STATE_WAIT_COAP     0x03
 #define WHISPER_STATE_SEND_RESULT   0x04
 
+#define WHISPER_COMMAND_DIO         0x01
+#define WHISPER_COMMAND_SIXTOP      0x02
+#define WHISPER_COMMAND_LINK_INFO   0x03
+#define WHISPER_COMMAND_NEIGHBOURS  0x04
+
 //=========================== typedef =========================================
 
 //=========================== variables =======================================
+
+typedef struct {
+    dagrank_t       neighbour_rank[MAXNUMNEIGHBORS]; // add this to the neighbour info (neighbour.h)
+    uint16_t        period; // period to which the dios should be sent
+    opentimers_id_t timer;
+    bool            active; // when true no normal dios will be sent
+} whisper_propagating_dio;
 
 typedef struct {
     uint8_t srcId[2];
@@ -41,6 +53,7 @@ typedef struct {
     open_addr_t	parent;
     open_addr_t nextHop;
     dagrank_t   rank;
+    bool        changeL2src;
 } whisper_dio_settings;
 
 typedef struct {
@@ -86,12 +99,19 @@ uint8_t         whisper_getState(void);
 void            whisper_task_remote(uint8_t* buf, uint8_t bufLen);
 void            whisperClearStateCb(opentimers_id_t id); // callback to clean up commands
 
+// Whisper propagating dio
+bool            getSendNormalDio();
+void            setPeriod(uint16_t period);
+void            togglePropagatingDios();
+void            setRankForNeighbour(open_addr_t* neighbour, dagrank_t rank);
+
 // Whipser Fake dio command
 open_addr_t*    getWhisperDIOtarget();
 open_addr_t*    getWhisperDIOparent();
 open_addr_t*    getWhisperDIOnextHop();
 dagrank_t       getWhisperDIOrank();
 void            whisperDioCommand(const uint8_t* command);
+bool            whisperDIOGetChangeL2src();
 
 // Whisper sixtop
 open_addr_t*    getWhisperSixtopSource();

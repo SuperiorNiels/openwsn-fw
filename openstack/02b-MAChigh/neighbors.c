@@ -869,3 +869,7 @@ void neighbors_setRankToSend(open_addr_t* neighbor, dagrank_t rank) {
         }
     }
 }
+
+neighborRow_t* neighbors_getNeighborRow(uint8_t index) {
+    return &neighbors_vars.neighbors[index];
+}

@@ -116,7 +116,7 @@ void          neighbors_updateAutonomousCells();
 bool          isNeighbor(open_addr_t* neighbor);
 uint8_t       getNeighborsList(uint8_t* list);
 void          neighbors_setRankToSend(open_addr_t* neighbor, dagrank_t rank);
-
+neighborRow_t* neighbors_getNeighborRow(uint8_t index);
 /**
 \}
 \}

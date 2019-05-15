@@ -81,6 +81,7 @@ typedef struct {
     uint16_t             timerPeriod;
     uint8_t 			 state;
     open_addr_t          my_addr;
+    open_addr_t          temp_addr;
     open_addr_t          controller_addr;
     uint8_t              payloadBuffer[30]; // 30 bytes should be enough
     // Command variables

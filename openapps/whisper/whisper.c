@@ -53,13 +53,13 @@ void whisper_init() {
 	whisper_vars.state = WHISPER_STATE_IDLE;
 	whisper_vars.whisper_propagating_dio.active = FALSE;
 
-    // my_addr = is to store the eui, so we can easily construct addresses by just setting the correct id
-    whisper_vars.my_addr.type = ADDR_128B;
-    memcpy(&whisper_vars.my_addr.addr_128b, 		idmanager_getMyID(ADDR_PREFIX)->prefix, 8);
-    memcpy(&whisper_vars.my_addr.addr_128b[8], 	    idmanager_getMyID(ADDR_64B)->addr_64b, 8);
-    whisper_vars.my_addr.addr_128b[0] = 0xbb;
-    whisper_vars.my_addr.addr_128b[1] = 0xbb;
-    whisper_print_address(&whisper_vars.my_addr);
+    // temp_addr = is to store the eui, so we can easily construct addresses by just setting the correct id
+    whisper_vars.temp_addr.type = ADDR_128B;
+    memcpy(&whisper_vars.temp_addr.addr_128b, 		idmanager_getMyID(ADDR_PREFIX)->prefix, 8);
+    memcpy(&whisper_vars.temp_addr.addr_128b[8], 	    idmanager_getMyID(ADDR_64B)->addr_64b, 8);
+    whisper_vars.temp_addr.addr_128b[0] = 0xbb;
+    whisper_vars.temp_addr.addr_128b[1] = 0xbb; // necessary to make dios work
+    memcpy(&whisper_vars.temp_addr, &whisper_vars.my_addr, sizeof(open_addr_t));
 
     // set controller address
     whisper_vars.controller_addr.type = ADDR_128B;
@@ -225,12 +225,32 @@ void whisperClearGeneratedPackets() {
 }
 
 void whisper_sendPropagatingDios() {
-    // Loop through neighbors, if the sequence number != 0 the neighbour is a direct child node so we send a dio
-    /*uint8_t i;
+    uint8_t i;
+    neighborRow_t row;
 
+    // Loop through neighbors, if the sequence number != 0 the neighbour is a connected child node so we send a dio
     for(i = 0; i < MAXNUMNEIGHBORS; i++) {
-        //
-    }*/
+        row = *neighbors_getNeighborRow(i);
+
+        if(row.stableNeighbor && row.used && row.sequenceNumber != 0) {
+            // Send dio
+            // Copy neighbor address in temp_addr
+            memcpy(&whisper_vars.temp_addr.addr_128b[8], row.addr_64b.addr_64b, 8);
+
+            // Target
+            memcpy(&whisper_vars.whisper_dio.target, &whisper_vars.temp_addr, sizeof(open_addr_t));
+
+            // Parent
+            memcpy(&whisper_vars.whisper_dio.parent, &whisper_vars.my_addr, sizeof(open_addr_t));
+
+            // Next Hop
+            memcpy(&whisper_vars.whisper_dio.nextHop, &whisper_vars.temp_addr, sizeof(open_addr_t));
+
+            whisper_vars.whisper_dio.rank = (row.rankToSend == DEFAULTDAGRANK) ?  icmpv6rpl_getMyDAGrank() : row.rankToSend;
+
+            uint8_t result = send_WhisperDIO();
+        }
+    }
 }
 
 // Whisper propagating dios
@@ -249,11 +269,11 @@ void whisper_setRankForNeighbour(uint8_t* command) {
     dagrank_t rank;
 
     // Target
-    whisper_vars.my_addr.addr_128b[14] = command[2];
-    whisper_vars.my_addr.addr_128b[15] = command[3];
-    memcpy(&whisper_vars.whisper_dio.target, &whisper_vars.my_addr, sizeof(open_addr_t));
+    whisper_vars.temp_addr.addr_128b[14] = command[2];
+    whisper_vars.temp_addr.addr_128b[15] = command[3];
+    memcpy(&whisper_vars.whisper_dio.target, &whisper_vars.temp_addr, sizeof(open_addr_t));
 
-    packetfunctions_ip128bToMac64b(&whisper_vars.my_addr, &temp, &neighbour);
+    packetfunctions_ip128bToMac64b(&whisper_vars.temp_addr, &temp, &neighbour);
 
     rank = (uint16_t) (command[4] << 8) | (uint16_t) command[5];
 
@@ -302,19 +322,19 @@ void whisperDioCommand(const uint8_t* command) {
     whisper_vars.state = WHISPER_STATE_DIO;
 
     // Target
-    whisper_vars.my_addr.addr_128b[14] = command[2];
-    whisper_vars.my_addr.addr_128b[15] = command[3];
-    memcpy(&whisper_vars.whisper_dio.target, &whisper_vars.my_addr, sizeof(open_addr_t));
+    whisper_vars.temp_addr.addr_128b[14] = command[2];
+    whisper_vars.temp_addr.addr_128b[15] = command[3];
+    memcpy(&whisper_vars.whisper_dio.target, &whisper_vars.temp_addr, sizeof(open_addr_t));
 
     // Parent
-    whisper_vars.my_addr.addr_128b[14] = command[4];
-    whisper_vars.my_addr.addr_128b[15] = command[5];
-    memcpy(&whisper_vars.whisper_dio.parent, &whisper_vars.my_addr, sizeof(open_addr_t));
+    whisper_vars.temp_addr.addr_128b[14] = command[4];
+    whisper_vars.temp_addr.addr_128b[15] = command[5];
+    memcpy(&whisper_vars.whisper_dio.parent, &whisper_vars.temp_addr, sizeof(open_addr_t));
 
     // Next Hop
-    whisper_vars.my_addr.addr_128b[14] = command[6];
-    whisper_vars.my_addr.addr_128b[15] = command[7];
-    memcpy(&whisper_vars.whisper_dio.nextHop, &whisper_vars.my_addr, sizeof(open_addr_t));
+    whisper_vars.temp_addr.addr_128b[14] = command[6];
+    whisper_vars.temp_addr.addr_128b[15] = command[7];
+    memcpy(&whisper_vars.whisper_dio.nextHop, &whisper_vars.temp_addr, sizeof(open_addr_t));
 
     whisper_vars.whisper_dio.rank = (uint16_t) (command[8] << 8) | (uint16_t) command[9];
 
@@ -426,15 +446,15 @@ bool whisperSixtopParse(const uint8_t* command) {
             return FALSE;
     }
 
-    // Target ID should be located at bytes 3-4, we use my_addr to construct the target address
-    whisper_vars.my_addr.addr_128b[14] = command[3];
-    whisper_vars.my_addr.addr_128b[15] = command[4];
-    packetfunctions_ip128bToMac64b(&whisper_vars.my_addr,&temp,&whisper_vars.whisper_sixtop.target);
+    // Target ID should be located at bytes 3-4, we use temp_addr to construct the target address
+    whisper_vars.temp_addr.addr_128b[14] = command[3];
+    whisper_vars.temp_addr.addr_128b[15] = command[4];
+    packetfunctions_ip128bToMac64b(&whisper_vars.temp_addr,&temp,&whisper_vars.whisper_sixtop.target);
 
-    // Source ID should be located at bytes 5-6, we use my_addr to construct the source address
-    whisper_vars.my_addr.addr_128b[14] = command[5];
-    whisper_vars.my_addr.addr_128b[15] = command[6];
-    packetfunctions_ip128bToMac64b(&whisper_vars.my_addr,&temp,&whisper_vars.whisper_sixtop.source);
+    // Source ID should be located at bytes 5-6, we use temp_addr to construct the source address
+    whisper_vars.temp_addr.addr_128b[14] = command[5];
+    whisper_vars.temp_addr.addr_128b[15] = command[6];
+    packetfunctions_ip128bToMac64b(&whisper_vars.temp_addr,&temp,&whisper_vars.whisper_sixtop.source);
 
     // CellType
     whisper_vars.whisper_sixtop.cellType = command[7];

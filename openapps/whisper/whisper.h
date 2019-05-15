@@ -34,6 +34,8 @@
 
 typedef struct {
     bool            active; // when true no normal dios will be sent
+    uint16_t        period; // rate at which dios will be sent
+    uint16_t        counter; // to slow down the simulator
 } whisper_propagating_dio_settings;
 
 typedef struct {

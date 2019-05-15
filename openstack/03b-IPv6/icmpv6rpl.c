@@ -672,7 +672,6 @@ void icmpv6rpl_timer_DIO_task(void) {
 
     if(whisper_getSendNormalDio() == FALSE) {
         // Send propagating dio (to each neighbour)
-        whisper_log("Send propagating dios.\n");
         whisper_sendPropagatingDios();
         return;
     }
@@ -1151,4 +1150,3 @@ bool icmpv6rpl_daoSent(void) {
     }
     return icmpv6rpl_vars.daoSent;
 }
-

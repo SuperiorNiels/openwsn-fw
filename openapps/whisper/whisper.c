@@ -52,6 +52,8 @@ void whisper_init() {
 
 	whisper_vars.state = WHISPER_STATE_IDLE;
 	whisper_vars.whisper_propagating_dio.active = FALSE;
+	whisper_vars.whisper_propagating_dio.period = 25000; // 65 seconds
+	whisper_vars.whisper_propagating_dio.counter = 0;
 
     // temp_addr = is to store the eui, so we can easily construct addresses by just setting the correct id
     whisper_vars.temp_addr.type = ADDR_128B;
@@ -59,7 +61,7 @@ void whisper_init() {
     memcpy(&whisper_vars.temp_addr.addr_128b[8], 	    idmanager_getMyID(ADDR_64B)->addr_64b, 8);
     whisper_vars.temp_addr.addr_128b[0] = 0xbb;
     whisper_vars.temp_addr.addr_128b[1] = 0xbb; // necessary to make dios work
-    memcpy(&whisper_vars.temp_addr, &whisper_vars.my_addr, sizeof(open_addr_t));
+    memcpy(&whisper_vars.my_addr, &whisper_vars.temp_addr, sizeof(open_addr_t));
 
     // set controller address
     whisper_vars.controller_addr.type = ADDR_128B;
@@ -228,6 +230,14 @@ void whisper_sendPropagatingDios() {
     uint8_t i;
     neighborRow_t row;
 
+    if(whisper_vars.whisper_propagating_dio.counter < 250) {
+        whisper_vars.whisper_propagating_dio.counter++;
+        return;
+    }
+
+    whisper_log("Send propagating dios.\n");
+    whisper_vars.whisper_propagating_dio.counter = 0;
+
     // Loop through neighbors, if the sequence number != 0 the neighbour is a connected child node so we send a dio
     for(i = 0; i < MAXNUMNEIGHBORS; i++) {
         row = *neighbors_getNeighborRow(i);
@@ -249,6 +259,10 @@ void whisper_sendPropagatingDios() {
             whisper_vars.whisper_dio.rank = (row.rankToSend == DEFAULTDAGRANK) ?  icmpv6rpl_getMyDAGrank() : row.rankToSend;
 
             uint8_t result = send_WhisperDIO();
+
+            if(result == E_SUCCESS) {
+                whisper_log("Dio sent to: "); whisper_print_address(&row.addr_64b);
+            }
         }
     }
 }
@@ -262,6 +276,12 @@ void whisper_setDIOPeriod(uint16_t period) {}
 
 void whisper_togglePropagatingDios() {
     whisper_vars.whisper_propagating_dio.active = (bool) !whisper_vars.whisper_propagating_dio.active;
+    if(whisper_vars.whisper_propagating_dio.active) {
+        whisper_log("Dio sent rate: %d\n", whisper_vars.whisper_propagating_dio.period);
+        icmpv6rpl_setDIOPeriod(whisper_vars.whisper_propagating_dio.period);
+    } else {
+        icmpv6rpl_setDIOPeriod(SLOTFRAME_LENGTH * SLOTDURATION);
+    }
 }
 
 void whisper_setRankForNeighbour(uint8_t* command) {

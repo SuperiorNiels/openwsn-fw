@@ -21,21 +21,20 @@
 #define WHISPER_STATE_WAIT_COAP     0x03
 #define WHISPER_STATE_SEND_RESULT   0x04
 
-#define WHISPER_COMMAND_DIO         0x01
-#define WHISPER_COMMAND_SIXTOP      0x02
-#define WHISPER_COMMAND_LINK_INFO   0x03
-#define WHISPER_COMMAND_NEIGHBOURS  0x04
+#define WHISPER_COMMAND_DIO             0x01
+#define WHISPER_COMMAND_SIXTOP          0x02
+#define WHISPER_COMMAND_LINK_INFO       0x03
+#define WHISPER_COMMAND_NEIGHBOURS      0x04
+#define WHISPER_COMMNAD_TOGGLE_DIO      0x05
+#define WHISPER_COMMNAD_SET_RANKTOSEND  0x06
 
 //=========================== typedef =========================================
 
 //=========================== variables =======================================
 
 typedef struct {
-    dagrank_t       neighbour_rank[MAXNUMNEIGHBORS]; // add this to the neighbour info (neighbour.h)
-    uint16_t        period; // period to which the dios should be sent
-    opentimers_id_t timer;
     bool            active; // when true no normal dios will be sent
-} whisper_propagating_dio;
+} whisper_propagating_dio_settings;
 
 typedef struct {
     uint8_t srcId[2];
@@ -89,6 +88,7 @@ typedef struct {
     whisper_dio_settings whisper_dio;
     whisper_sixtop_request_settings whisper_sixtop;
     whisper_neighbor_info neighbors;
+    whisper_propagating_dio_settings whisper_propagating_dio;
 } whisper_vars_t;
 
 //=========================== prototypes ======================================
@@ -98,12 +98,14 @@ void            whisper_setState(uint8_t i);
 uint8_t         whisper_getState(void);
 void            whisper_task_remote(uint8_t* buf, uint8_t bufLen);
 void            whisperClearStateCb(opentimers_id_t id); // callback to clean up commands
+void            whisperClearGeneratedPackets(); // Function to clear the generated packets by whisper
+void            whisperStartCleanUpTimer();
 
 // Whisper propagating dio
-bool            getSendNormalDio();
-void            setPeriod(uint16_t period);
-void            togglePropagatingDios();
-void            setRankForNeighbour(open_addr_t* neighbour, dagrank_t rank);
+bool            whisper_getSendNormalDio();
+void            whisper_setDIOPeriod(uint16_t period);
+void            whisper_togglePropagatingDios();
+void            whisper_setRankForNeighbour(uint8_t* command);
 
 // Whipser Fake dio command
 open_addr_t*    getWhisperDIOtarget();

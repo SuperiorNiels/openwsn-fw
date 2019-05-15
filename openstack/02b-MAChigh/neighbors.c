@@ -699,7 +699,7 @@ bool debugPrint_neighbors(void) {
     neighbors_vars.debugRow=(neighbors_vars.debugRow+1)%MAXNUMNEIGHBORS;
     temp.row=neighbors_vars.debugRow;
     temp.neighborEntry=neighbors_vars.neighbors[neighbors_vars.debugRow];
-    openserial_printStatus(STATUS_NEIGHBORS,(uint8_t*)&temp,sizeof(debugNeighborEntry_t));
+    openserial_printStatus(STATUS_NEIGHBORS,(uint8_t*)&temp,sizeof(debugNeighborEntry_t) - sizeof(dagrank_t));
     return TRUE;
 }
 
@@ -745,6 +745,7 @@ void registerNewNeighbor(open_addr_t* address,
                 memcpy(&neighbors_vars.neighbors[i].asn,asnTimestamp,sizeof(asn_t));
                 neighbors_vars.neighbors[i].backoffExponenton      = MINBE-1;;
                 neighbors_vars.neighbors[i].backoff                = 0;
+                neighbors_vars.neighbors[i].rankToSend             = DEFAULTDAGRANK;
                 //update jp
                 if (joinPrioPresent==TRUE){
                     neighbors_vars.neighbors[i].joinPrio=joinPrio;
@@ -801,8 +802,7 @@ void removeNeighbor(uint8_t neighborIndex) {
     neighbors_vars.neighbors[neighborIndex].backoffExponenton         = MINBE-1;;
     neighbors_vars.neighbors[neighborIndex].backoff                   = 0;
     neighbors_vars.neighbors[neighborIndex].addr_64b.type             = ADDR_NONE;
-
-
+    neighbors_vars.neighbors[neighborIndex].rankToSend                = 0;
 }
 
 //=========================== helpers =========================================
@@ -857,4 +857,15 @@ uint8_t getNeighborsList(uint8_t* list) {
         }
     }
     return count;
+}
+
+void neighbors_setRankToSend(open_addr_t* neighbor, dagrank_t rank) {
+    uint8_t i;
+
+    for(i = 0; i < MAXNUMNEIGHBORS; i++) {
+        if(isThisRowMatching(neighbor, i)) {
+            // Neighbor entry found: update rankToSend
+            neighbors_vars.neighbors[i].rankToSend = rank;
+        }
+    }
 }

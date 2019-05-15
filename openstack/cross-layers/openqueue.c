@@ -92,6 +92,7 @@ OpenQueueEntry_t* openqueue_getFreePacketBuffer(uint8_t creator) {
          openqueue_vars.queue[i].owner=COMPONENT_OPENQUEUE;
          // Reset whisper variables
          openqueue_vars.queue[i].isDioFake = FALSE;
+         openqueue_vars.queue[i].is6pFake = FALSE;
          ENABLE_INTERRUPTS();
          return &openqueue_vars.queue[i];
       }
@@ -492,6 +493,16 @@ OpenQueueEntry_t*  openqueue_macGet6PandJoinPacket(open_addr_t* toNeighbor){
 
     ENABLE_INTERRUPTS();
     return NULL;
+}
+
+void openqueue_freeWhisperPackets() {
+    uint8_t i;
+
+    for(i = 0; i < QUEUELENGTH; i++) {
+        if (openqueue_vars.queue[i].isDioFake || openqueue_vars.queue[i].is6pFake) {
+            openqueue_reset_entry(&(openqueue_vars.queue[i]));
+        }
+    }
 }
 
 

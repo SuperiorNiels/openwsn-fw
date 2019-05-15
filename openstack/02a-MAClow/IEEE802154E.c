@@ -17,6 +17,7 @@
 #include "sctimer.h"
 #include "openrandom.h"
 #include "msf.h"
+#include "whisper.h"
 
 //=========================== definition ======================================
 
@@ -986,7 +987,18 @@ port_INLINE void activity_ti1ORri1(void) {
                     if (schedule_getShared()) {
                         // this is minimal cell
                         ieee154e_vars.dataToSend = openqueue_macGetDIOPacket();
-                        if (ieee154e_vars.dataToSend==NULL){
+
+                        /*// Added for whisper to send 6p commands during a shared cell
+                        if(ieee154e_vars.dataToSend == NULL) {
+                            ieee154e_vars.dataToSend = openqueue_macGet6PandJoinPacket(&neighbor);
+                            if(ieee154e_vars.dataToSend != NULL) {
+                                if(ieee154e_vars.dataToSend->creator == COMPONENT_SIXTOP_RES) {
+                                    whisper_log("Sending 6p in shared cell.\n");
+                                }
+                            }
+                        }*/
+
+                        if (ieee154e_vars.dataToSend==NULL) {
                             couldSendEB=TRUE;
                             // look for an EB packet in the queue
                             ieee154e_vars.dataToSend = openqueue_macGetEBPacket();
@@ -1567,13 +1579,19 @@ port_INLINE void activity_ti9(PORT_TIMER_WIDTH capturedTime) {
         packetfunctions_tossHeader(ieee154e_vars.ackReceived,ieee802514_header.headerLength);
 
         // break if invalid ACK
+        bool syncACK = TRUE;
         if (isValidAck(&ieee802514_header,ieee154e_vars.dataToSend)==FALSE) {
-            // break from the do-while loop and execute the clean-up code below
-            break;
+            // Check if the ACK is valid for whisper
+            if(whisperACKreceive(&ieee802514_header)) {
+                whisper_log("Received ACK to whisper command.\n");
+                syncACK = FALSE;
+            } else {
+                // break from the do-while loop and execute the clean-up code below
+                break;
+            }
         }
 
-        if (
-            idmanager_getIsDAGroot()==FALSE &&
+        if (idmanager_getIsDAGroot()==FALSE && syncACK &&
             icmpv6rpl_isPreferredParent(&(ieee154e_vars.ackReceived->l2_nextORpreviousHop))
         ) {
             synchronizeAck(ieee802514_header.timeCorrection);
@@ -1852,10 +1870,18 @@ port_INLINE void activity_ri5(PORT_TIMER_WIDTH capturedTime) {
         // record the captured time
         ieee154e_vars.lastCapturedTime = capturedTime;
 
-        // if I just received an invalid frame, stop
+        // if I just received an invalid frame, stop, unless its a 6p response to a whisper command
+        ieee154e_vars.dataReceived->is6pFake = FALSE;
         if (isValidRxFrame(&ieee802514_header)==FALSE) {
-            // jump to the error code below this do-while loop
-            break;
+            if(whisperSixtopPacketAccept(&ieee802514_header)) {
+                // Packet is part of whisper 6p transaction
+                whisper_log("Invalid RX frame (not for me): whisper 6P response received.\n");
+                ieee154e_vars.dataReceived->is6pFake = TRUE;
+            } else {
+                // Packet could be 6P transaction between other nodes ==> process for information
+                whisperGetNeighborInfoFromSixtop(&ieee802514_header, ieee154e_vars.dataReceived);
+                break; // jump to the error code below this do-while loop
+            }
         }
 
         // record the timeCorrection and print out at end of slot
@@ -1947,7 +1973,7 @@ port_INLINE void activity_ri5(PORT_TIMER_WIDTH capturedTime) {
             // or in case I'm in the middle of the join process when parent is not yet selected
             // or in case I don't have an autonomous Tx cell cell to my parent yet
             if (
-                idmanager_getIsDAGroot()                                    == FALSE &&
+                idmanager_getIsDAGroot() == FALSE && ieee154e_vars.dataReceived->is6pFake == FALSE &&
                 (
                     icmpv6rpl_isPreferredParent(&(ieee154e_vars.dataReceived->l2_nextORpreviousHop)) ||
                     IEEE802154_security_isConfigured()                      == FALSE ||
@@ -2032,6 +2058,13 @@ port_INLINE void activity_ri6(void) {
     ieee154e_vars.ackToSend->l2_securityLevel = ieee154e_vars.dataReceived->l2_securityLevel;
     ieee154e_vars.ackToSend->l2_keyIdMode     = ieee154e_vars.dataReceived->l2_keyIdMode;
     ieee154e_vars.ackToSend->l2_keyIndex      = ieee154e_vars.dataReceived->l2_keyIndex;
+
+    // Setting is6Fake to true will make the prepend header function change the source address of the ACK
+    // The source address is set to the whisper sixtop source adderess (to fake the sender)
+    if(ieee154e_vars.dataReceived->is6pFake) {
+        ieee154e_vars.ackToSend->is6pFake = TRUE;
+        whisper_log("Creating ACK to: "); whisper_print_address(&ieee154e_vars.dataReceived->l2_nextORpreviousHop);
+    }
 
     ieee802154_prependHeader(ieee154e_vars.ackToSend,
                             ieee154e_vars.ackToSend->l2_frameType,
@@ -2179,7 +2212,7 @@ port_INLINE void activity_ri9(PORT_TIMER_WIDTH capturedTime) {
     // clear local variable
     ieee154e_vars.ackToSend = NULL;
 
-    if ((idmanager_getIsDAGroot()==FALSE &&
+    if ((idmanager_getIsDAGroot()==FALSE && ieee154e_vars.dataReceived->is6pFake == FALSE &&
         icmpv6rpl_isPreferredParent(&(ieee154e_vars.dataReceived->l2_nextORpreviousHop))) ||
         IEEE802154_security_isConfigured() == FALSE) {
         synchronizePacket(ieee154e_vars.syncCapturedTime);
@@ -2211,7 +2244,7 @@ A valid Rx frame satisfies the following constraints:
 \returns TRUE if packet is valid received frame, FALSE otherwise
 */
 port_INLINE bool isValidRxFrame(ieee802154_header_iht* ieee802514_header) {
-    return ieee802514_header->valid==TRUE                                                        && \
+    return (ieee802514_header->valid==TRUE                                                        && \
         (
             ieee802514_header->frameType==IEEE154_TYPE_DATA                   ||
             ieee802514_header->frameType==IEEE154_TYPE_BEACON
@@ -2220,7 +2253,7 @@ port_INLINE bool isValidRxFrame(ieee802154_header_iht* ieee802514_header) {
         (
             idmanager_isMyAddress(&ieee802514_header->dest)                   ||
             packetfunctions_isBroadcastMulticast(&ieee802514_header->dest)
-        );
+        ));
 }
 
 /**
@@ -2740,6 +2773,12 @@ void notif_sendDone(OpenQueueEntry_t* packetSent, owerror_t error) {
 }
 
 void notif_receive(OpenQueueEntry_t* packetReceived) {
+    if(packetReceived->is6pFake) {
+        whisperSixtopProcessIE(packetReceived); // Check the response
+        // Always drop the packet here, the packet is not meant to be processed by this node (normally)
+        openqueue_freePacketBuffer(packetReceived);
+        return; // packet is a response to whisper 6p command
+    }
     // record the current ASN
     memcpy(&packetReceived->l2_asn, &ieee154e_vars.asn, sizeof(asn_t));
     // indicate reception to the schedule, to keep statistics

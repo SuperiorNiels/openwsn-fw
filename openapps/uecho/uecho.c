@@ -44,7 +44,7 @@ void uecho_receive(OpenQueueEntry_t* request) {
    // reply with the same OpenQueueEntry_t
    reply->creator                       = COMPONENT_UECHO;
    reply->l4_protocol                   = IANA_UDP;
-   temp_l4_destination_port             = request->l4_destination_port;
+   temp_l4_destination_port           = request->l4_destination_port;
    reply->l4_destination_port           = request->l4_sourcePortORicmpv6Type;
    reply->l4_sourcePortORicmpv6Type     = temp_l4_destination_port;
    reply->l3_destinationAdd.type        = ADDR_128B;

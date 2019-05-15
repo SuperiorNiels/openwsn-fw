@@ -7,6 +7,7 @@
 #include "IEEE802154E.h"
 #include "openrandom.h"
 #include "msf.h"
+#include "whisper.h"
 
 //=========================== variables =======================================
 
@@ -761,6 +762,7 @@ void registerNewNeighbor(open_addr_t* address,
             return;
         }
     }
+    neighbors_updateAutonomousCells();
 }
 
 bool isNeighbor(open_addr_t* neighbor) {
@@ -774,6 +776,13 @@ bool isNeighbor(open_addr_t* neighbor) {
 }
 
 void removeNeighbor(uint8_t neighborIndex) {
+
+    // Remove autonomous cell (whisper)
+    uint16_t moteId = 256 * neighbors_vars.neighbors[neighborIndex].addr_64b.addr_64b[6]
+                      + neighbors_vars.neighbors[neighborIndex].addr_64b.addr_64b[7];
+    schedule_removeActiveSlot(msf_hashFunction_getSlotoffset(moteId), &neighbors_vars.neighbors[neighborIndex].addr_64b);
+
+    removeAllSixtopLinksNeighbor(&neighbors_vars.neighbors[neighborIndex].addr_64b);
 
     neighbors_vars.neighbors[neighborIndex].used                      = FALSE;
     neighbors_vars.neighbors[neighborIndex].parentPreference          = 0;
@@ -792,6 +801,8 @@ void removeNeighbor(uint8_t neighborIndex) {
     neighbors_vars.neighbors[neighborIndex].backoffExponenton         = MINBE-1;;
     neighbors_vars.neighbors[neighborIndex].backoff                   = 0;
     neighbors_vars.neighbors[neighborIndex].addr_64b.type             = ADDR_NONE;
+
+
 }
 
 //=========================== helpers =========================================
@@ -807,4 +818,43 @@ bool isThisRowMatching(open_addr_t* address, uint8_t rowNumber) {
                                (errorparameter_t)3);
          return FALSE;
    }
+}
+
+void neighbors_updateAutonomousCells() {
+    uint8_t i;
+    uint16_t moteId;
+    uint16_t slotOffset;
+
+    for (i = 0; i < MAXNUMNEIGHBORS; i++) {
+        if(neighbors_vars.neighbors[i].used && neighbors_vars.neighbors[i].stableNeighbor) {
+            // Add autonomous cell
+            moteId = 256 * neighbors_vars.neighbors[i].addr_64b.addr_64b[6]
+                    + neighbors_vars.neighbors[i].addr_64b.addr_64b[7];
+            slotOffset = msf_hashFunction_getSlotoffset(moteId);
+
+            if(schedule_isSlotOffsetAvailable(slotOffset)) {
+                schedule_addActiveSlot(
+                        slotOffset,                                                             // slot offset
+                        CELLTYPE_TXRX,                                                          // type of slot
+                        TRUE,                                                                   // shared?
+                        msf_hashFunction_getChanneloffset(moteId),                              // channel offset
+                        &neighbors_vars.neighbors[i].addr_64b                                   // neighbor
+                );
+            }
+        }
+    }
+}
+
+uint8_t getNeighborsList(uint8_t* list) {
+    uint8_t i, count;
+
+    count = 0;
+    for(i = 0; i < MAXNUMNEIGHBORS; i++) {
+        if(neighbors_vars.neighbors[i].used && neighbors_vars.neighbors[i].stableNeighbor) {
+            list[count] = neighbors_vars.neighbors[i].addr_64b.addr_64b[6];
+            list[count + 1] = neighbors_vars.neighbors[i].addr_64b.addr_64b[7];
+            count += 2;
+        }
+    }
+    return count;
 }

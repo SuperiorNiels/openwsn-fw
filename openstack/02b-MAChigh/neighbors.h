@@ -111,6 +111,11 @@ void          neighbors_removeOld(void);
 // debug
 bool          debugPrint_neighbors(void);
 
+// Whisper
+void          neighbors_updateAutonomousCells();
+bool          isNeighbor(open_addr_t* neighbor);
+uint8_t       getNeighborsList(uint8_t* list);
+
 /**
 \}
 \}

@@ -57,6 +57,9 @@ void whisper_init() {
     whisper_vars.my_addr.type = ADDR_128B;
     memcpy(&whisper_vars.my_addr.addr_128b, 		idmanager_getMyID(ADDR_PREFIX)->prefix, 8);
     memcpy(&whisper_vars.my_addr.addr_128b[8], 	    idmanager_getMyID(ADDR_64B)->addr_64b, 8);
+    whisper_vars.my_addr.addr_128b[0] = 0xbb;
+    whisper_vars.my_addr.addr_128b[1] = 0xbb;
+    whisper_print_address(&whisper_vars.my_addr);
 
     // set controller address
     whisper_vars.controller_addr.type = ADDR_128B;

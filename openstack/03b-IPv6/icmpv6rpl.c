@@ -875,7 +875,7 @@ uint8_t send_WhisperDIO() {
     whisper_print_address(&msg->l3_destinationAdd);
 
     //===== Configuration option
-    packetfunctions_reserveHeaderSize(msg,sizeof(icmpv6rpl_config_ht));
+    //packetfunctions_reserveHeaderSize(msg,sizeof(icmpv6rpl_config_ht));
 
     /*//copy the conf in the packet
     memcpy(

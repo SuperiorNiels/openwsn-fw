@@ -221,6 +221,15 @@ void whisperClearGeneratedPackets() {
     openqueue_freeWhisperPackets();
 }
 
+void whisper_sendPropagatingDios() {
+    // Loop through neighbors, if the sequence number != 0 the neighbour is a direct child node so we send a dio
+    /*uint8_t i;
+
+    for(i = 0; i < MAXNUMNEIGHBORS; i++) {
+        //
+    }*/
+}
+
 // Whisper propagating dios
 bool whisper_getSendNormalDio() {
     return (bool) !whisper_vars.whisper_propagating_dio.active;

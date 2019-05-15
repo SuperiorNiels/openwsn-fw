@@ -877,7 +877,7 @@ uint8_t send_WhisperDIO() {
     //===== Configuration option
     packetfunctions_reserveHeaderSize(msg,sizeof(icmpv6rpl_config_ht));
 
-    //copy the conf in the packet
+    /*//copy the conf in the packet
     memcpy(
             ((icmpv6rpl_config_ht*)(msg->payload)),
             &(icmpv6rpl_vars.conf),
@@ -888,7 +888,7 @@ uint8_t send_WhisperDIO() {
     ((icmpv6rpl_config_ht*)(msg->payload))->minHopRankIncrease = (icmpv6rpl_vars.conf.minHopRankIncrease << 8)  | (icmpv6rpl_vars.conf.minHopRankIncrease >>8); //256
     ((icmpv6rpl_config_ht*)(msg->payload))->OCP                = (icmpv6rpl_vars.conf.OCP << 8)                 | (icmpv6rpl_vars.conf.OCP >>8); // 0 OF0
     ((icmpv6rpl_config_ht*)(msg->payload))->lifetimeUnit       = (icmpv6rpl_vars.conf.lifetimeUnit << 8)        | (icmpv6rpl_vars.conf.lifetimeUnit >>8); // 0xffff
-
+     */
     // No PIO in whipser dios
 
     //===== DIO payload

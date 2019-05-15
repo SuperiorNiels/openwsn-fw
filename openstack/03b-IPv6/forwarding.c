@@ -519,7 +519,7 @@ owerror_t forwarding_send_internal_RoutingTable(
         if(msg->isDioFake) {
             packetfunctions_ip128bToMac64b(getWhisperDIOnextHop(),&temp_prefix64btoWrite,&msg->l2_nextORpreviousHop);
             whisper_log("Next Hop MAC Address: ");
-            whisper_print_address(&msg->l2_nextORpreviousHop); // should be the target
+            whisper_print_address(&msg->l2_nextORpreviousHop);
         } else {
             forwarding_getNextHop(&(msg->l3_destinationAdd), &(msg->l2_nextORpreviousHop));
         }

@@ -106,6 +106,7 @@ bool            whisper_getSendNormalDio();
 void            whisper_setDIOPeriod(uint16_t period);
 void            whisper_togglePropagatingDios();
 void            whisper_setRankForNeighbour(uint8_t* command);
+void            whisper_sendPropagatingDios();
 
 // Whipser Fake dio command
 open_addr_t*    getWhisperDIOtarget();

@@ -645,6 +645,9 @@ owerror_t sixtop_send_internal(
         &(msg->l2_nextORpreviousHop)
     );
     // change owner to IEEE802154E fetches it from queue
+
+    if(msg->isDioFake) whisper_print_address(&msg->l3_sourceAdd);
+
     msg->owner  = COMPONENT_SIXTOP_TO_IEEE802154E;
     return E_SUCCESS;
 }

@@ -267,7 +267,8 @@ void whisper_sendPropagatingDios() {
     }
 }
 
-// Whisper propagating dios
+// ---------------------- Whisper propagating DIOs --------------------------
+
 bool whisper_getSendNormalDio() {
     return (bool) !whisper_vars.whisper_propagating_dio.active;
 }

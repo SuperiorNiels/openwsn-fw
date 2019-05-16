@@ -26,3 +26,4 @@ settings
 /projects/telosb/02drv_opentimers/path.txt
 cmake-build-debug/
 openapps/userialbridge/userialbridge_obj.h
+.vscode/ipch/*

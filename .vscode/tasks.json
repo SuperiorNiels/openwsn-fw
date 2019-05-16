@@ -4,12 +4,15 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Build Python",
+            "label": "Root Build Python",
             "command": "scons",
             "args": ["board=python", "toolchain=gcc",  "oos_openwsn"],
             "type": "shell",
             "group": "build",
-            "problemMatcher": "$msCompile" // Important to catch the status
+            "problemMatcher": "$msCompile", // Important to catch the status
+            "options": {
+                "cwd": "${workspaceFolder}",
+            }
         }
     ]
 }

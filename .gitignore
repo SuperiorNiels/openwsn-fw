@@ -25,3 +25,6 @@ settings
 /projects/telosb/03oos_macpong/path.txt
 /projects/telosb/02drv_opentimers/path.txt
 .idea
+.vscode
+cmake-build-debug/
+openapps/userialbridge/userialbridge_obj.h

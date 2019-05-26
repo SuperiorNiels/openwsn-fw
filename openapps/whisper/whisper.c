@@ -81,7 +81,7 @@ void whisper_init() {
 	opencoap_register(&whisper_vars.desc);
 
 	// Start timer for data collection (on root)
-    whisper_vars.timerPeriod = 1000; // FIXME: maybe 5 seconds?
+    whisper_vars.timerPeriod = 5000; // FIXME: maybe 5 seconds?
     whisper_vars.periodicTimer = opentimers_create(TIMER_GENERAL_PURPOSE, TASKPRIO_RPL);
     whisper_vars.oneshotTimer = opentimers_create(TIMER_GENERAL_PURPOSE, TASKPRIO_RPL);
     opentimers_scheduleIn(
@@ -145,6 +145,7 @@ void whisperClearStateCb(opentimers_id_t id) {
 void whisper_timer_cb(opentimers_id_t id) {
     // Check if the neigbour list has changed, add the autonomous cell to each neigbour
     neighbors_updateAutonomousCells();
+    leds_error_toggle();
 }
 
 void whisper_task_remote(uint8_t* buf, uint8_t bufLen) {
@@ -803,7 +804,7 @@ void sendCoapResponseToController(uint8_t *payload, uint8_t length) {
 // ============================================================================================
 // Logging (should be removed for openmote build, no printf)
 void whisper_log(char* msg, ...) {
-	open_addr_t* my_id = idmanager_getMyID(ADDR_16B);
+	/*open_addr_t* my_id = idmanager_getMyID(ADDR_16B);
 
 	char state[20];
 	switch(whisper_vars.state) {
@@ -827,11 +828,11 @@ void whisper_log(char* msg, ...) {
 	vsnprintf(buf, sizeof(buf), msg, v1);
 	va_end(v1);
 
-	printf(buf);
+	printf(buf);*/
 }
 
 void whisper_print_address(open_addr_t* addr) {
-	uint8_t length = 4;
+	/*uint8_t length = 4;
 	uint8_t* start_addr = addr->addr_16b;
 	switch (addr->type) {
 		case ADDR_64B:
@@ -849,7 +850,7 @@ void whisper_print_address(open_addr_t* addr) {
 		printf("%02x", start_addr[i]);
 		if(i < length - 1) printf(":");
 	}
-	printf("\n");
+	printf("\n");*/
 }
 
 
